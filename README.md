@@ -1,6 +1,6 @@
 # b2-backup-script
 
-Internal tool intended to backup a SharePoint document library on a set schedule to B2.
+Internal tool intended to backup a SharePoint document library (or any directory on disk) on a set schedule to B2.
 
 There is a health check listening on port 3000
 
