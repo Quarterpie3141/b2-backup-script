@@ -55,7 +55,7 @@ function uploadLargeFileToB2(filePath, bucketId, bucketSubPath) {
             const fileId = startLargeFileResponse.fileId;
             logger.info(`Started large file upload: ${fileId}`);
             // split the file into parts
-            const partSize = 50 * 1024 * 1024; // 1 MB
+            const partSize = 50 * 1024 * 1024; // 50 MB
             const fileStream = fs_extra_1.default.createReadStream(filePath, {
                 highWaterMark: partSize,
             });

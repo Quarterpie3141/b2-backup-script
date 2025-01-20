@@ -49,7 +49,7 @@ export async function uploadLargeFileToB2(
 		logger.info(`Started large file upload: ${fileId}`);
 
 		// split the file into parts
-		const partSize = 50 * 1024 * 1024; // 1 MB
+		const partSize = 50 * 1024 * 1024; // 50 MB
 		const fileStream = fs.createReadStream(filePath, {
 			highWaterMark: partSize,
 		});
