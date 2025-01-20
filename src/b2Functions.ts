@@ -18,7 +18,6 @@ if (
 	process.exit(1);
 }
 
-
 const bucketPath = process.env.B2_BUCKT_SUBFOLDER as string;
 
 const b2 = new B2({
@@ -93,9 +92,7 @@ export async function uploadLargeFileToB2(
 			partSha1Array,
 		});
 
-		logger.info(
-			'File uploaded successfully.',
-		);
+		logger.info("File uploaded successfully.");
 		return finishLargeFileResponse;
 	} catch (error) {
 		logger.fatal("Error uploading large file to B2");
@@ -103,7 +100,10 @@ export async function uploadLargeFileToB2(
 	}
 }
 
-export async function deleteFileVersion(fileName: string, fileId: string): Promise<AxiosResponse> {
+export async function deleteFileVersion(
+	fileName: string,
+	fileId: string,
+): Promise<AxiosResponse> {
 	try {
 		// authorise the account
 		await b2.authorize();
@@ -112,9 +112,9 @@ export async function deleteFileVersion(fileName: string, fileId: string): Promi
 			fileName,
 			fileId,
 		});
-        return(response)
+		return response;
 	} catch (error) {
 		logger.error(`Error deleting file version: ${error}`);
-        return Promise.reject(error)
+		return Promise.reject(error);
 	}
 }

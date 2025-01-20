@@ -16,16 +16,15 @@ exports.createDailyBackup = createDailyBackup;
 exports.createWeeklyBackup = createWeeklyBackup;
 exports.createMonthlyBackup = createMonthlyBackup;
 exports.createYearlyBackup = createYearlyBackup;
-const createZipFromPath_1 = __importDefault(require("./createZipFromPath"));
-const b2Functions_1 = require("./b2Functions");
 const fs_extra_1 = __importDefault(require("fs-extra"));
+const b2Functions_1 = require("./b2Functions");
+const createZipFromPath_1 = __importDefault(require("./createZipFromPath"));
 const logger = require("pino")();
 const { format } = require("date-fns");
 const os = require("node:os");
 const node_path_1 = __importDefault(require("node:path"));
 //check for the required enviroment variables
-if (!(process.env.B2_BUCKET_ID &&
-    process.env.BACKUP_FOLDER_PATH)) {
+if (!(process.env.B2_BUCKET_ID && process.env.BACKUP_FOLDER_PATH)) {
     logger.fatal("The required enviroment variables are not declared!");
     process.exit(1);
 }
@@ -66,9 +65,11 @@ function createDailyBackup(backuplog) {
                 backuplog.daily = dailyBackupArray;
                 // Step 5: Delete the oldest file from B2
                 logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID).then(() => {
+                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID)
+                    .then(() => {
                     logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
-                }).catch((err) => {
+                })
+                    .catch((err) => {
                     logger.error(`Failed to delete file. ${err}`);
                 });
                 // Step 5: Write the updated log to disk
@@ -122,9 +123,11 @@ function createWeeklyBackup(backuplog) {
                 backuplog.weekly = weeklyBackupArray;
                 // Step 5: Delete the oldest file from B2
                 logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID).then(() => {
+                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID)
+                    .then(() => {
                     logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
-                }).catch((err) => {
+                })
+                    .catch((err) => {
                     logger.error(`Failed to delete file. ${err}`);
                 });
                 // Step 5: Write the updated log to disk
@@ -178,9 +181,11 @@ function createMonthlyBackup(backuplog) {
                 backuplog.monthly = monthlyBackupArray;
                 // Step 5: Delete the oldest file from B2
                 logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID).then(() => {
+                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID)
+                    .then(() => {
                     logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
-                }).catch((err) => {
+                })
+                    .catch((err) => {
                     logger.error(`Failed to delete file. ${err}`);
                 });
                 // Step 5: Write the updated log to disk

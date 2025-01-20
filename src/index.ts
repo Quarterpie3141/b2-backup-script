@@ -1,35 +1,41 @@
-const dotenv = require("dotenv").config("../.env")
+const dotenv = require("dotenv").config("../.env");
 
+import {
+	type BackupLog,
+	createDailyBackup,
+	createMonthlyBackup,
+	createWeeklyBackup,
+	createYearlyBackup,
+} from "./backupFunctions";
 import runHealthCheck from "./healthCheck";
-import { createDailyBackup, createWeeklyBackup, createMonthlyBackup, createYearlyBackup, type BackupLog} from "./backupFunctions";
 
-const cron = require('node-cron')
+const cron = require("node-cron");
 const fs = require("fs-extra");
 const logger = require("pino")();
 const path = require("node:path");
 
-runHealthCheck()
+runHealthCheck();
 
-// read the backup log into memory
-const backupLog: BackupLog = JSON.parse(
-	fs.readFileSync(path.join(__dirname, "backup-log.json"), "utf-8"),
-);
+async function main() {
+	// read the backup log into memory
+	const backupLog: BackupLog = JSON.parse(
+		fs.readFileSync(path.join(__dirname, "backup-log.json"), "utf-8"),
+	);
 
-//attempt to run backups when started
-createDailyBackup(backupLog)
-createWeeklyBackup(backupLog)
-createMonthlyBackup(backupLog)
-createYearlyBackup(backupLog)
+	//attempt to run backups when started
+	logger.info("Running bulk backup job...");
+	await createDailyBackup(backupLog);
+	await createWeeklyBackup(backupLog);
+	await createMonthlyBackup(backupLog);
+	await createYearlyBackup(backupLog);
+	logger.info("Finished bulk backup job.");
 
-//attempt to run them every 12 hours
-cron.schedule('* * 12 * * *', ()=>{
-    logger.info('Running bulk backup job...')
-    createDailyBackup(backupLog)
-    createWeeklyBackup(backupLog)
-    createMonthlyBackup(backupLog)
-    createYearlyBackup(backupLog)
-    logger.info('Finished bulk backup job.')
-})
-
-
-
+	//attempt to run them every 12 hours
+	cron.schedule("* * 12 * * *", () => {
+		logger.info("Running bulk backup job...");
+		createDailyBackup(backupLog);
+		createWeeklyBackup(backupLog);
+		createMonthlyBackup(backupLog);
+		createYearlyBackup(backupLog);
+	});
+}

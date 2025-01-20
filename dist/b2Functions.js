@@ -102,7 +102,7 @@ function uploadLargeFileToB2(filePath, bucketId, bucketSubPath) {
                 fileId,
                 partSha1Array,
             });
-            logger.info('File uploaded successfully.');
+            logger.info("File uploaded successfully.");
             return finishLargeFileResponse;
         }
         catch (error) {
@@ -121,7 +121,7 @@ function deleteFileVersion(fileName, fileId) {
                 fileName,
                 fileId,
             });
-            return (response);
+            return response;
         }
         catch (error) {
             logger.error(`Error deleting file version: ${error}`);

@@ -1,6 +1,6 @@
-import createZipFromPath from "./createZipFromPath";
-import { uploadLargeFileToB2, deleteFileVersion } from "./b2Functions";
 import fs from "fs-extra";
+import { deleteFileVersion, uploadLargeFileToB2 } from "./b2Functions";
+import createZipFromPath from "./createZipFromPath";
 const logger = require("pino")();
 const { format } = require("date-fns");
 const os = require("node:os");
@@ -21,19 +21,13 @@ export interface BackupLog {
 }
 
 //check for the required enviroment variables
-if (
-	!(
-		process.env.B2_BUCKET_ID &&
-		process.env.BACKUP_FOLDER_PATH
-	)
-) {
+if (!(process.env.B2_BUCKET_ID && process.env.BACKUP_FOLDER_PATH)) {
 	logger.fatal("The required enviroment variables are not declared!");
 	process.exit(1);
 }
 
 const b2BucketID = process.env.B2_BUCKET_ID;
 const backupPath = process.env.BACKUP_FOLDER_PATH;
-
 
 export async function createDailyBackup(backuplog: BackupLog) {
 	const dailyBackupArray = backuplog.daily;
@@ -83,13 +77,13 @@ export async function createDailyBackup(backuplog: BackupLog) {
 
 			// Step 5: Delete the oldest file from B2
 			logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-			await deleteFileVersion(fileToDelete.fileName, fileToDelete.fileID).then(()=>{
-                logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`)
-            }).catch(
-				(err) => {
+			await deleteFileVersion(fileToDelete.fileName, fileToDelete.fileID)
+				.then(() => {
+					logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
+				})
+				.catch((err) => {
 					logger.error(`Failed to delete file. ${err}`);
-				},
-			)
+				});
 
 			// Step 5: Write the updated log to disk
 			await fs.writeFile(
@@ -157,13 +151,13 @@ export async function createWeeklyBackup(backuplog: BackupLog) {
 
 			// Step 5: Delete the oldest file from B2
 			logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-			await deleteFileVersion(fileToDelete.fileName, fileToDelete.fileID).then(()=>{
-                logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`)
-            }).catch(
-				(err) => {
+			await deleteFileVersion(fileToDelete.fileName, fileToDelete.fileID)
+				.then(() => {
+					logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
+				})
+				.catch((err) => {
 					logger.error(`Failed to delete file. ${err}`);
-				},
-			)
+				});
 
 			// Step 5: Write the updated log to disk
 			await fs.writeFile(
@@ -231,13 +225,13 @@ export async function createMonthlyBackup(backuplog: BackupLog) {
 
 			// Step 5: Delete the oldest file from B2
 			logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-			await deleteFileVersion(fileToDelete.fileName, fileToDelete.fileID).then(()=>{
-                logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`)
-            }).catch(
-				(err) => {
+			await deleteFileVersion(fileToDelete.fileName, fileToDelete.fileID)
+				.then(() => {
+					logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
+				})
+				.catch((err) => {
 					logger.error(`Failed to delete file. ${err}`);
-				},
-			)
+				});
 
 			// Step 5: Write the updated log to disk
 			await fs.writeFile(
@@ -261,9 +255,7 @@ export async function createYearlyBackup(backuplog: BackupLog) {
 	let yearlyBackupEntry = backuplog.yearly;
 
 	// Check if the file was run more than a year ago
-	if (
-		Date.now() > Number(yearlyBackupEntry.lastRan) + 86400 * 1000 * 365
-	) {
+	if (Date.now() > Number(yearlyBackupEntry.lastRan) + 86400 * 1000 * 365) {
 		const backupTime = Date.now();
 		logger.info("Creating a Yearly backup");
 
