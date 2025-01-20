@@ -13,7 +13,7 @@ exports.default = createZipFromPath;
 const logger = require("pino")();
 const zl = require("zip-lib");
 const fs = require("fs-extra");
-const path = require("noode:path");
+const path = require("node:path");
 function createZipFromPath(srcpath, destpath) {
     return __awaiter(this, void 0, void 0, function* () {
         const maxRetries = 3;
@@ -22,7 +22,6 @@ function createZipFromPath(srcpath, destpath) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 logger.info(`Attempt ${attempt}: Zipping file: ${srcpath}`);
-                // Create a new Zip instance
                 const zip = new zl.Zip();
                 // Recursively add files and folders, excluding dot files
                 const addFolderToZip = (folder, metadataPath = "") => {

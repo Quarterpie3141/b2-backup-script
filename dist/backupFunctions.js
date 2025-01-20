@@ -16,236 +16,113 @@ exports.createDailyBackup = createDailyBackup;
 exports.createWeeklyBackup = createWeeklyBackup;
 exports.createMonthlyBackup = createMonthlyBackup;
 exports.createYearlyBackup = createYearlyBackup;
+const node_os_1 = __importDefault(require("node:os"));
+const node_path_1 = __importDefault(require("node:path"));
 const fs_extra_1 = __importDefault(require("fs-extra"));
 const b2Functions_1 = require("./b2Functions");
 const createZipFromPath_1 = __importDefault(require("./createZipFromPath"));
 const logger = require("pino")();
 const { format } = require("date-fns");
-const os = require("node:os");
-const node_path_1 = __importDefault(require("node:path"));
-//check for the required enviroment variables
+// Environment variable validation
 if (!(process.env.B2_BUCKET_ID && process.env.BACKUP_FOLDER_PATH)) {
-    logger.fatal("The required enviroment variables are not declared!");
+    logger.fatal("The required environment variables are not declared!");
     process.exit(1);
 }
 const b2BucketID = process.env.B2_BUCKET_ID;
 const backupPath = process.env.BACKUP_FOLDER_PATH;
-function createDailyBackup(backuplog) {
+const tempBackupFolderPath = process.env.TEMP_BACKUP_FOLDER_PATH || node_os_1.default.tmpdir();
+//Helper function to determine if a backup is required.
+function isBackupRequired(lastRan, retentionPeriod) {
+    return !lastRan || Date.now() > Number(lastRan) + retentionPeriod;
+}
+// Helper function to create the ZIP file and upload it.
+function createAndUploadBackup(backupType, uploadPath) {
     return __awaiter(this, void 0, void 0, function* () {
-        var _a;
-        const dailyBackupArray = backuplog.daily;
-        // Check if the file was run more than a day ago
-        if (dailyBackupArray.length > 0 &&
-            Date.now() > Number((_a = dailyBackupArray.at(-1)) === null || _a === void 0 ? void 0 : _a.lastRan) + 86400 * 1000) {
-            const backupTime = Date.now();
-            logger.info("Creating a Daily backup");
-            const tempFileName = `SharePoint_Backup[${format(new Date(), "yyyy-MM-dd")}].zip`;
-            const tempFilePath = node_path_1.default.join(os.tmpdir(), tempFileName);
-            try {
-                // Step 1: Create the ZIP file
-                yield (0, createZipFromPath_1.default)(backupPath, tempFilePath);
-                // Step 2: Check the size of the ZIP file
-                const fileStat = yield fs_extra_1.default.stat(tempFilePath);
-                if (fileStat.size < 50 * 1024 * 1024) {
-                    logger.fatal("Backup folder size is too small for upload.");
-                    return;
+        const backupTime = Date.now();
+        const tempFileName = `SharePoint_Backup[${format(new Date(), "yyyy-MM-dd")}].zip`;
+        const tempFilePath = node_path_1.default.join(tempBackupFolderPath, tempFileName);
+        try {
+            logger.info(`Creating ${backupType} backup`);
+            // Step 1: Create ZIP file
+            yield (0, createZipFromPath_1.default)(backupPath, tempFilePath);
+            // Step 2: Check ZIP file size
+            const fileStat = yield fs_extra_1.default.stat(tempFilePath);
+            if (fileStat.size < 50 * 1024 * 1024) {
+                logger.fatal("Backup folder size is too small for upload.");
+                return null;
+            }
+            // Step 3: Upload to B2
+            const uploadData = yield (0, b2Functions_1.uploadLargeFileToB2)(tempFilePath, b2BucketID, uploadPath);
+            return {
+                lastRan: backupTime.toString(),
+                fileName: uploadData.data.fileName,
+                fileID: uploadData.data.fileId,
+                fileSize: uploadData.data.contentLength,
+            };
+        }
+        catch (error) {
+            logger.fatal(`Error during ${backupType} backup: ${error}`);
+            return null;
+        }
+        finally {
+            yield fs_extra_1.default.rm(tempFilePath, { force: true });
+        }
+    });
+}
+/// Generalized backup creation function.
+function handleBackup(backupArray, backupType, backuplog, retentionPeriod, uploadPath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b;
+        const lastRan = backupType === "yearly"
+            ? (_a = backuplog.yearly) === null || _a === void 0 ? void 0 : _a.lastRan
+            : (_b = backupArray === null || backupArray === void 0 ? void 0 : backupArray.at(-1)) === null || _b === void 0 ? void 0 : _b.lastRan;
+        // Check if a backup is required
+        if (isBackupRequired(lastRan, retentionPeriod)) {
+            const newBackup = yield createAndUploadBackup(backupType, uploadPath);
+            if (newBackup) {
+                if (backupType === "yearly") {
+                    // Update the yearly log entry
+                    backuplog.yearly = newBackup;
                 }
-                // Step 3: Upload the file to B2
-                const uploadData = yield (0, b2Functions_1.uploadLargeFileToB2)(tempFilePath, b2BucketID, "daily/");
-                // Step 4: Update the backup log
-                const uploadedFileLogEntry = {
-                    lastRan: backupTime.toString(),
-                    fileName: uploadData.data.fileName,
-                    fileID: uploadData.data.fileId,
-                    fileSize: uploadData.data.contentLength,
-                };
-                logger.info("Updating backup log.");
-                const fileToDelete = dailyBackupArray.shift();
-                dailyBackupArray.push(uploadedFileLogEntry);
-                backuplog.daily = dailyBackupArray;
-                // Step 5: Delete the oldest file from B2
-                logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID)
-                    .then(() => {
-                    logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
-                })
-                    .catch((err) => {
-                    logger.error(`Failed to delete file. ${err}`);
-                });
-                // Step 5: Write the updated log to disk
+                else if (backupArray) {
+                    // Handle other backup types
+                    const fileToDelete = backupArray.shift(); // Remove the oldest backup
+                    if (fileToDelete) {
+                        logger.warn(`Deleting file: ${fileToDelete.fileName}`);
+                        yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID).catch((err) => {
+                            logger.error(`Failed to delete file: ${err}`);
+                        });
+                    }
+                    backupArray.push(newBackup); // Add the new backup
+                }
+                // Write updated log to disk
                 yield fs_extra_1.default.writeFile(node_path_1.default.join(__dirname, "backup-log.json"), JSON.stringify(backuplog, null, 2), "utf-8");
-                logger.info("Backup log updated successfully.");
-            }
-            catch (error) {
-                logger.fatal(`Error during backup process: ${error}`);
-            }
-            finally {
-                yield fs_extra_1.default.rm(tempFilePath, { force: true });
+                logger.info(`${backupType} backup log updated successfully.`);
             }
         }
         else {
-            logger.warn("Last backup was created less than a day ago, skipping...");
+            logger.warn(`Last ${backupType} backup was created recently, skipping...`);
         }
+    });
+}
+// Individual backup functions.
+function createDailyBackup(backuplog) {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield handleBackup(backuplog.daily, "daily", backuplog, 86400 * 1000, "daily/");
     });
 }
 function createWeeklyBackup(backuplog) {
     return __awaiter(this, void 0, void 0, function* () {
-        var _a;
-        const weeklyBackupArray = backuplog.weekly;
-        // Check if the file was run more than a week(7 days) ago
-        if (weeklyBackupArray.length > 0 &&
-            Date.now() > Number((_a = weeklyBackupArray.at(-1)) === null || _a === void 0 ? void 0 : _a.lastRan) + 86400 * 1000 * 7) {
-            const backupTime = Date.now();
-            logger.info("Creating a Weekly backup");
-            const tempFileName = `SharePoint_Backup[${format(new Date(), "yyyy-MM-dd")}].zip`;
-            const tempFilePath = node_path_1.default.join(os.tmpdir(), tempFileName);
-            try {
-                // Step 1: Create the ZIP file
-                yield (0, createZipFromPath_1.default)(backupPath, tempFilePath);
-                // Step 2: Check the size of the ZIP file
-                const fileStat = yield fs_extra_1.default.stat(tempFilePath);
-                if (fileStat.size < 50 * 1024 * 1024) {
-                    logger.fatal("Backup folder size is too small for upload.");
-                    return;
-                }
-                // Step 3: Upload the file to B2
-                const uploadData = yield (0, b2Functions_1.uploadLargeFileToB2)(tempFilePath, b2BucketID, "weekly/");
-                // Step 4: Update the backup log
-                const uploadedFileLogEntry = {
-                    lastRan: backupTime.toString(),
-                    fileName: uploadData.data.fileName,
-                    fileID: uploadData.data.fileId,
-                    fileSize: uploadData.data.contentLength,
-                };
-                logger.info("Updating backup log.");
-                const fileToDelete = weeklyBackupArray.shift();
-                weeklyBackupArray.push(uploadedFileLogEntry);
-                backuplog.weekly = weeklyBackupArray;
-                // Step 5: Delete the oldest file from B2
-                logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID)
-                    .then(() => {
-                    logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
-                })
-                    .catch((err) => {
-                    logger.error(`Failed to delete file. ${err}`);
-                });
-                // Step 5: Write the updated log to disk
-                yield fs_extra_1.default.writeFile(node_path_1.default.join(__dirname, "backup-log.json"), JSON.stringify(backuplog, null, 2), "utf-8");
-                logger.info("Backup log updated successfully.");
-            }
-            catch (error) {
-                logger.fatal(`Error during backup process: ${error}`);
-            }
-            finally {
-                yield fs_extra_1.default.rm(tempFilePath, { force: true });
-            }
-        }
-        else {
-            logger.warn("Last backup was created less than a week ago, skipping...");
-        }
+        yield handleBackup(backuplog.weekly, "weekly", backuplog, 86400 * 1000 * 7, "weekly/");
     });
 }
 function createMonthlyBackup(backuplog) {
     return __awaiter(this, void 0, void 0, function* () {
-        var _a;
-        const monthlyBackupArray = backuplog.monthly;
-        // Check if the file was run more than a month(30 days) ago
-        if (monthlyBackupArray.length > 0 &&
-            Date.now() > Number((_a = monthlyBackupArray.at(-1)) === null || _a === void 0 ? void 0 : _a.lastRan) + 86400 * 1000 * 30) {
-            const backupTime = Date.now();
-            logger.info("Creating a Monthly backup");
-            const tempFileName = `SharePoint_Backup[${format(new Date(), "yyyy-MM-dd")}].zip`;
-            const tempFilePath = node_path_1.default.join(os.tmpdir(), tempFileName);
-            try {
-                // Step 1: Create the ZIP file
-                yield (0, createZipFromPath_1.default)(backupPath, tempFilePath);
-                // Step 2: Check the size of the ZIP file
-                const fileStat = yield fs_extra_1.default.stat(tempFilePath);
-                if (fileStat.size < 50 * 1024 * 1024) {
-                    logger.fatal("Backup folder size is too small for upload.");
-                    return;
-                }
-                // Step 3: Upload the file to B2
-                const uploadData = yield (0, b2Functions_1.uploadLargeFileToB2)(tempFilePath, b2BucketID, "monthly/");
-                // Step 4: Update the backup log
-                const uploadedFileLogEntry = {
-                    lastRan: backupTime.toString(),
-                    fileName: uploadData.data.fileName,
-                    fileID: uploadData.data.fileId,
-                    fileSize: uploadData.data.contentLength,
-                };
-                logger.info("Updating backup log.");
-                const fileToDelete = monthlyBackupArray.shift();
-                monthlyBackupArray.push(uploadedFileLogEntry);
-                backuplog.monthly = monthlyBackupArray;
-                // Step 5: Delete the oldest file from B2
-                logger.warn(`Deleting file: ${fileToDelete.fileName}`);
-                yield (0, b2Functions_1.deleteFileVersion)(fileToDelete.fileName, fileToDelete.fileID)
-                    .then(() => {
-                    logger.info(`Sucsessfully deleted file: ${fileToDelete.fileName}`);
-                })
-                    .catch((err) => {
-                    logger.error(`Failed to delete file. ${err}`);
-                });
-                // Step 5: Write the updated log to disk
-                yield fs_extra_1.default.writeFile(node_path_1.default.join(__dirname, "backup-log.json"), JSON.stringify(backuplog, null, 2), "utf-8");
-                logger.info("Backup log updated successfully.");
-            }
-            catch (error) {
-                logger.fatal(`Error during backup process: ${error}`);
-            }
-            finally {
-                yield fs_extra_1.default.rm(tempFilePath, { force: true });
-            }
-        }
-        else {
-            logger.warn("Last backup was created less than a month ago, skipping...");
-        }
+        yield handleBackup(backuplog.monthly, "monthly", backuplog, 86400 * 1000 * 30, "monthly/");
     });
 }
 function createYearlyBackup(backuplog) {
     return __awaiter(this, void 0, void 0, function* () {
-        let yearlyBackupEntry = backuplog.yearly;
-        // Check if the file was run more than a year ago
-        if (Date.now() > Number(yearlyBackupEntry.lastRan) + 86400 * 1000 * 365) {
-            const backupTime = Date.now();
-            logger.info("Creating a Yearly backup");
-            const tempFileName = `SharePoint_Backup[${format(new Date(), "yyyy-MM-dd")}].zip`;
-            const tempFilePath = node_path_1.default.join(os.tmpdir(), tempFileName);
-            try {
-                // Step 1: Create the ZIP file
-                yield (0, createZipFromPath_1.default)(backupPath, tempFilePath);
-                // Step 2: Check the size of the ZIP file
-                const fileStat = yield fs_extra_1.default.stat(tempFilePath);
-                if (fileStat.size < 50 * 1024 * 1024) {
-                    logger.fatal("Backup folder size is too small for upload.");
-                    return;
-                }
-                // Step 3: Upload the file to B2
-                const uploadData = yield (0, b2Functions_1.uploadLargeFileToB2)(tempFilePath, b2BucketID, "yearly/");
-                // Step 4: Update the yarly log entry
-                const uploadedFileLogEntry = {
-                    lastRan: backupTime.toString(),
-                    fileName: uploadData.data.fileName,
-                    fileID: uploadData.data.fileId,
-                    fileSize: uploadData.data.contentLength,
-                };
-                yearlyBackupEntry = uploadedFileLogEntry;
-                backuplog.yearly = yearlyBackupEntry;
-                // Step 5: Write the updated log to disk
-                yield fs_extra_1.default.writeFile(node_path_1.default.join(__dirname, "backup-log.json"), JSON.stringify(backuplog, null, 2), "utf-8");
-                logger.info("Backup log updated successfully.");
-            }
-            catch (error) {
-                logger.fatal(`Error during backup process: ${error}`);
-            }
-            finally {
-                yield fs_extra_1.default.rm(tempFilePath, { force: true });
-            }
-        }
-        else {
-            logger.warn("Last backup was created less than a year ago, skipping...");
-        }
+        yield handleBackup(null, "yearly", backuplog, 86400 * 1000 * 365, "yearly/");
     });
 }
