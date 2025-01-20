@@ -57,7 +57,7 @@ async function createAndUploadBackup(
 
 		// Step 2: Check ZIP file size
 		const fileStat = await fs.stat(tempFilePath);
-		if (fileStat.size < 50 * 1024 * 1024) {
+		if (fileStat.size < 100 * 1024 * 1024 * 2) {
 			logger.fatal("Backup folder size is too small for upload.");
 			return null;
 		}
