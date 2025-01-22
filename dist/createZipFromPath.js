@@ -9,41 +9,37 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.default = createZipFromPath;
+exports.default = createZipFromTopLevelFolders;
 const logger = require("pino")();
 const zl = require("zip-lib");
 const fs = require("fs-extra");
 const path = require("node:path");
-function createZipFromPath(srcpath, destpath) {
+function createZipFromTopLevelFolders(srcpath, destpath) {
     return __awaiter(this, void 0, void 0, function* () {
         const maxRetries = 3;
         const delay = 10000; // 10 seconds in milliseconds
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                logger.info(`Attempt ${attempt}: Zipping file: ${srcpath}`);
+                logger.info(`Attempt ${attempt}: Zipping top-level folders: ${srcpath}`);
                 const zip = new zl.Zip();
-                // Recursively add files and folders, excluding dot files
-                const addFolderToZip = (folder, metadataPath = "") => {
-                    const items = fs.readdirSync(folder);
-                    for (const item of items) {
-                        // Skip dot files and directories
-                        if (item.startsWith("."))
-                            continue;
-                        const fullPath = path.join(folder, item);
-                        const stat = fs.statSync(fullPath);
-                        if (stat.isDirectory()) {
-                            // Add folder recursively
-                            addFolderToZip(fullPath, path.join(metadataPath, item));
-                        }
-                        else {
-                            // Add file
-                            zip.addFile(fullPath, path.join(metadataPath, item));
-                        }
+                // Get the list of top-level items in the source path
+                const items = fs.readdirSync(srcpath);
+                for (const item of items) {
+                    // Skip dot files and dot folders
+                    if (item.startsWith("."))
+                        continue;
+                    const fullPath = path.join(srcpath, item);
+                    const stat = fs.statSync(fullPath);
+                    if (stat.isDirectory()) {
+                        // Add the top-level folder to the zip (as-is, without recursion)
+                        zip.addFolder(fullPath, item);
                     }
-                };
-                // Start adding from the root source path
-                addFolderToZip(srcpath);
+                    else {
+                        // Add top-level file
+                        zip.addFile(fullPath, item);
+                    }
+                }
                 // Generate the zip file
                 yield zip.archive(destpath);
                 logger.info(`Zipped File: ${destpath}`);
@@ -56,7 +52,7 @@ function createZipFromPath(srcpath, destpath) {
                     yield wait(delay); // Wait before retrying
                 }
                 else {
-                    logger.fatal(`All ${maxRetries} attempts failed. Unable to zip file: ${srcpath}`);
+                    logger.fatal(`All ${maxRetries} attempts failed. Unable to zip top-level folders in: ${srcpath}`);
                     throw err; // Throw the error after the last attempt
                 }
             }

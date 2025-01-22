@@ -30,7 +30,7 @@ const b2BucketID = process.env.B2_BUCKET_ID;
 const backupPath = process.env.BACKUP_FOLDER_PATH;
 const tempBackupFolderPath = process.env.TEMP_BACKUP_FOLDER_PATH || os.tmpdir();
 
- //Helper function to determine if a backup is required.
+//Helper function to determine if a backup is required.
 
 function isBackupRequired(
 	lastRan: string | undefined,
@@ -40,7 +40,7 @@ function isBackupRequired(
 }
 
 // Helper function to create the ZIP file and upload it.
- 
+
 async function createAndUploadBackup(
 	backupType: string,
 	uploadPath: string,

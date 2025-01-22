@@ -15,14 +15,16 @@ var __asyncValues = (this && this.__asyncValues) || function (o) {
     function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
     function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uploadLargeFileToB2 = uploadLargeFileToB2;
 exports.deleteFileVersion = deleteFileVersion;
 const B2 = require("backblaze-b2");
-const fs = require("fs-extra");
+const fs_extra_1 = __importDefault(require("fs-extra"));
 const logger = require("pino")();
-const path = require("node:path");
-const ora = require("ora");
+const node_path_1 = __importDefault(require("node:path"));
 const crypt = require("node:crypto");
 //check for the required enviroment variables
 if (!(process.env.B2_APPLICATION_KEY &&
@@ -41,48 +43,41 @@ function uploadLargeFileToB2(filePath, bucketId, bucketSubPath) {
     return __awaiter(this, void 0, void 0, function* () {
         var _a, e_1, _b, _c;
         try {
-            const spinner = ora("Authorizing with B2...").start();
-            // Authorize the account
+            // authorize the account
             yield b2.authorize();
-            spinner.succeed("Authorized with B2 successfully.");
-            // Start the large file upload
-            const fileName = path.posix.join(bucketPath, bucketSubPath, path.basename(filePath));
-            spinner.start("Starting large file upload...");
+            logger.info("Authorized with B2 successfully.");
+            // start the large file upload
+            const fileName = node_path_1.default.posix.join(bucketPath, bucketSubPath, node_path_1.default.basename(filePath));
             const { data: startLargeFileResponse } = yield b2.startLargeFile({
                 bucketId,
                 fileName,
             });
             const fileId = startLargeFileResponse.fileId;
-            spinner.succeed(`Started large file upload: ${fileId}`);
-            // Split the file into parts
-            const partSize = 50 * 1024 * 1024; // 100 MB
-            const fileSize = fs.statSync(filePath).size;
-            const numParts = Math.ceil(fileSize / partSize);
-            spinner.info(`File size: ${fileSize}, Number of parts: ${numParts}`);
-            let partNumber = 1;
-            const partSha1Array = [];
-            let uploadedBytes = 0;
-            const fileStream = fs.createReadStream(filePath, {
+            logger.info(`Started large file upload: ${fileId}`);
+            // split the file into parts
+            const partSize = 100 * 1024 * 1024; // 100 MB
+            const fileStream = fs_extra_1.default.createReadStream(filePath, {
                 highWaterMark: partSize,
             });
+            const fileSize = fs_extra_1.default.statSync(filePath).size;
+            const numParts = Math.ceil(fileSize / partSize);
+            logger.info(`File size: ${fileSize}, Number of parts: ${numParts}`);
+            let partNumber = 1;
+            const partSha1Array = [];
             try {
                 for (var _d = true, fileStream_1 = __asyncValues(fileStream), fileStream_1_1; fileStream_1_1 = yield fileStream_1.next(), _a = fileStream_1_1.done, !_a; _d = true) {
                     _c = fileStream_1_1.value;
                     _d = false;
                     const chunk = _c;
-                    // Get an upload URL for this part
-                    spinner.start(`Fetching upload URL for part ${partNumber}...`);
+                    // get an upload URL for this part
                     const { data: uploadPartData } = yield b2.getUploadPartUrl({ fileId });
                     const partUploadUrl = uploadPartData.uploadUrl;
                     const partAuthToken = uploadPartData.authorizationToken;
-                    spinner.succeed(`Fetched upload URL for part ${partNumber}.`);
-                    // Calculate hash of the chunk
-                    spinner.start(`Calculating hash for part ${partNumber}...`);
+                    // calculate hash of the chunk
                     const sha1Hash = crypt.createHash("sha1").update(chunk).digest("hex");
                     partSha1Array.push(sha1Hash);
-                    spinner.succeed(`Hash calculated for part ${partNumber}.`);
-                    // Upload the chunk
-                    spinner.start(`Uploading part ${partNumber}/${numParts}...`);
+                    // upload the chunk
+                    logger.info(`Uploading part ${partNumber}/${numParts}`);
                     yield b2.uploadPart({
                         uploadUrl: partUploadUrl,
                         uploadAuthToken: partAuthToken,
@@ -90,10 +85,7 @@ function uploadLargeFileToB2(filePath, bucketId, bucketSubPath) {
                         data: chunk,
                         hash: sha1Hash,
                     });
-                    // Update progress
-                    uploadedBytes += chunk.length;
-                    const progress = ((uploadedBytes / fileSize) * 100).toFixed(2);
-                    spinner.succeed(`Uploaded part ${partNumber}/${numParts}. Progress: ${progress}%`);
+                    logger.info(`Part ${partNumber} uploaded.`);
                     partNumber++;
                 }
             }
@@ -104,17 +96,17 @@ function uploadLargeFileToB2(filePath, bucketId, bucketSubPath) {
                 }
                 finally { if (e_1) throw e_1.error; }
             }
-            // Finalize the large file upload
-            spinner.start("Finalizing large file upload...");
+            // finalize the large file upload
+            logger.info("Finalizing large file upload...");
             const finishLargeFileResponse = yield b2.finishLargeFile({
                 fileId,
                 partSha1Array,
             });
-            spinner.succeed("File uploaded successfully.");
+            logger.info("File uploaded successfully.");
             return finishLargeFileResponse;
         }
         catch (error) {
-            const spinner = ora().fail("Error uploading large file to B2");
+            logger.fatal("Error uploading large file to B2");
             return Promise.reject(error);
         }
     });

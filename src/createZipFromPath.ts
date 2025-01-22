@@ -3,7 +3,7 @@ const zl = require("zip-lib");
 const fs = require("fs-extra");
 const path = require("node:path");
 
-export default async function createZipFromPath(
+export default async function createZipFromTopLevelFolders(
 	srcpath: string,
 	destpath: string,
 ): Promise<void> {
@@ -15,31 +15,28 @@ export default async function createZipFromPath(
 
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
-			logger.info(`Attempt ${attempt}: Zipping file: ${srcpath}`);
+			logger.info(`Attempt ${attempt}: Zipping top-level folders: ${srcpath}`);
 
 			const zip = new zl.Zip();
 
-			// Recursively add files and folders, excluding dot files
-			const addFolderToZip = (folder: string, metadataPath = "") => {
-				const items = fs.readdirSync(folder);
-				for (const item of items) {
-					// Skip dot files and directories
-					if (item.startsWith(".")) continue;
-					const fullPath = path.join(folder, item);
-					const stat = fs.statSync(fullPath);
+			// Get the list of top-level items in the source path
+			const items = fs.readdirSync(srcpath);
 
-					if (stat.isDirectory()) {
-						// Add folder recursively
-						addFolderToZip(fullPath, path.join(metadataPath, item));
-					} else {
-						// Add file
-						zip.addFile(fullPath, path.join(metadataPath, item));
-					}
+			for (const item of items) {
+				// Skip dot files and dot folders
+				if (item.startsWith(".")) continue;
+
+				const fullPath = path.join(srcpath, item);
+				const stat = fs.statSync(fullPath);
+
+				if (stat.isDirectory()) {
+					// Add the top-level folder to the zip (as-is, without recursion)
+					zip.addFolder(fullPath, item);
+				} else {
+					// Add top-level file
+					zip.addFile(fullPath, item);
 				}
-			};
-
-			// Start adding from the root source path
-			addFolderToZip(srcpath);
+			}
 
 			// Generate the zip file
 			await zip.archive(destpath);
@@ -52,7 +49,7 @@ export default async function createZipFromPath(
 				await wait(delay); // Wait before retrying
 			} else {
 				logger.fatal(
-					`All ${maxRetries} attempts failed. Unable to zip file: ${srcpath}`,
+					`All ${maxRetries} attempts failed. Unable to zip top-level folders in: ${srcpath}`,
 				);
 				throw err; // Throw the error after the last attempt
 			}
