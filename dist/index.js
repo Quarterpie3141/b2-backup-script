@@ -32,7 +32,7 @@ function main() {
         yield (0, backupFunctions_1.createYearlyBackup)(backupLog);
         logger.info("Finished bulk backup job.");
         //attempt to run them every 12 hours
-        cron.schedule("* * 12 * * *", () => {
+        cron.schedule("0 0 12 * * *", () => {
             logger.info("Running bulk backup job...");
             (0, backupFunctions_1.createDailyBackup)(backupLog);
             (0, backupFunctions_1.createWeeklyBackup)(backupLog);
