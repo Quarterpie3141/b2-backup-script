@@ -26,78 +26,126 @@ const b2 = new B2({
 });
 
 export async function uploadLargeFileToB2(
-	filePath: string,
-	bucketId: string,
-	bucketSubPath: string,
+    filePath: string,
+    bucketId: string,
+    bucketSubPath: string,
+    maxRetries = 5
 ): Promise<AxiosResponse> {
-	try {
-		// authorize the account
-		await b2.authorize();
-		logger.info("Authorized with B2 successfully.");
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    async function retryOperation<T>(
+        operation: () => Promise<T>,
+        operationName: string,
+        currentRetry = 0
+    ): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            if (currentRetry >= maxRetries) {
+                logger.error(`${operationName} failed after ${maxRetries} retries`);
+                throw error;
+            }
+            
+            const waitTime = Math.min(1000 * (2**currentRetry), 32000); // Max 32 seconds
+            logger.warn(`${operationName} failed, retrying in ${waitTime}ms. Attempt ${currentRetry + 1}/${maxRetries}`);
+            await delay(waitTime);
+            return retryOperation(operation, operationName, currentRetry + 1);
+        }
+    }
 
-		// start the large file upload
-		const fileName = path.posix.join(
-			bucketPath,
-			bucketSubPath,
-			path.basename(filePath),
-		);
-		const { data: startLargeFileResponse } = await b2.startLargeFile({
-			bucketId,
-			fileName,
-		});
-		const fileId = startLargeFileResponse.fileId;
-		logger.info(`Started large file upload: ${fileId}`);
+    async function uploadPartWithRetry(
+        fileId: string,
+        chunk: Buffer,
+        partNumber: number,
+        numParts: number
+    ): Promise<string> {
+        return await retryOperation(async () => {
+            // get an upload URL for this part
+            const { data: uploadPartData } = await b2.getUploadPartUrl({ fileId });
+            const partUploadUrl = uploadPartData.uploadUrl;
+            const partAuthToken = uploadPartData.authorizationToken;
+            
+            // calculate hash of the chunk
+            const sha1Hash = crypt.createHash("sha1").update(chunk).digest("hex");
+            
+            // upload the chunk
+            logger.info(`Uploading part ${partNumber}/${numParts}`);
+            await b2.uploadPart({
+                uploadUrl: partUploadUrl,
+                uploadAuthToken: partAuthToken,
+                partNumber,
+                data: chunk,
+                hash: sha1Hash,
+            });
+            logger.info(`Part ${partNumber} uploaded.`);
+            return sha1Hash;
+        }, `Part ${partNumber} upload`);
+    }
 
-		// split the file into parts
-		const partSize = 10 * 1024 * 1024; // 10 MB
-		const fileStream = fs.createReadStream(filePath, {
-			highWaterMark: partSize,
-		});
-		const fileSize = fs.statSync(filePath).size;
-		const numParts = Math.ceil(fileSize / partSize);
+    while (true) {
+        try {
+            // authorize the account
+            await retryOperation(
+                async () => await b2.authorize(),
+                "B2 Authorization"
+            );
+            logger.info("Authorized with B2 successfully.");
 
-		logger.info(`File size: ${fileSize}, Number of parts: ${numParts}`);
+            // start the large file upload
+            const fileName = path.posix.join(
+                bucketPath,
+                bucketSubPath,
+                path.basename(filePath),
+            );
+            
+            const { data: startLargeFileResponse } = await retryOperation(
+                async () => await b2.startLargeFile({
+                    bucketId,
+                    fileName,
+                }),
+                "Start large file upload"
+            );
+            
+            const fileId = startLargeFileResponse.fileId;
+            logger.info(`Started large file upload: ${fileId}`);
 
-		let partNumber = 1;
-		const partSha1Array: string[] = [];
+            // split the file into parts
+            const partSize = 30 * 1024 * 1024; // 30 MB
+            const fileStream = fs.createReadStream(filePath, {
+                highWaterMark: partSize,
+            });
+            const fileSize = fs.statSync(filePath).size;
+            const numParts = Math.ceil(fileSize / partSize);
+            logger.info(`File size: ${fileSize}, Number of parts: ${numParts}`);
 
-		for await (const chunk of fileStream) {
-			// get an upload URL for this part
-			const { data: uploadPartData } = await b2.getUploadPartUrl({ fileId });
-			const partUploadUrl = uploadPartData.uploadUrl;
-			const partAuthToken = uploadPartData.authorizationToken;
+            let partNumber = 1;
+            const partSha1Array: string[] = [];
 
-			// calculate hash of the chunk
-			const sha1Hash = crypt.createHash("sha1").update(chunk).digest("hex");
-			partSha1Array.push(sha1Hash);
+            for await (const chunk of fileStream) {
+                const sha1Hash = await uploadPartWithRetry(fileId, chunk, partNumber, numParts);
+                partSha1Array.push(sha1Hash);
+                partNumber++;
+            }
 
-			// upload the chunk
-			logger.info(`Uploading part ${partNumber}/${numParts}`);
-			await b2.uploadPart({
-				uploadUrl: partUploadUrl,
-				uploadAuthToken: partAuthToken,
-				partNumber,
-				data: chunk,
-				hash: sha1Hash,
-			});
+            // finalize the large file upload
+            logger.info("Finalizing large file upload...");
+            const finishLargeFileResponse = await retryOperation(
+                async () => await b2.finishLargeFile({
+                    fileId,
+                    partSha1Array,
+                }),
+                "Finish large file upload"
+            );
+            
+            logger.info("File uploaded successfully.");
+            return finishLargeFileResponse;
 
-			logger.info(`Part ${partNumber} uploaded.`);
-			partNumber++;
-		}
-
-		// finalize the large file upload
-		logger.info("Finalizing large file upload...");
-		const finishLargeFileResponse = await b2.finishLargeFile({
-			fileId,
-			partSha1Array,
-		});
-
-		logger.info("File uploaded successfully.");
-		return finishLargeFileResponse;
-	} catch (error) {
-		logger.fatal("Error uploading large file to B2");
-		return Promise.reject(error);
-	}
+        } catch (error) {
+            logger.error("Error uploading large file to B2:", error);
+            logger.info("Retrying entire upload process...");
+            await delay(5000); // Wait 5 seconds before retrying the entire process
+        }
+    }
 }
 
 export async function deleteFileVersion(
