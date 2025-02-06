@@ -31,7 +31,7 @@ async function main() {
 	logger.info("Finished bulk backup job.");
 
 	//attempt to run them every 12 hours
-	cron.schedule("0 0 12 * * *", async () => {
+	cron.schedule("0 0 0 * * *", async () => {
 		logger.info("Running bulk backup job...");
 		await createDailyBackup(backupLog);
 		await createWeeklyBackup(backupLog);
